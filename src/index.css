@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* Colour tokens. Dark mode just swaps these, so components use semantic names (bg-card,
+   text-muted, bg-brand...) and never need dark: variants. Dark follows the device setting unless
+   Settings -> Appearance picked one (html[data-theme], see theme.ts). */
+:root {
+  --bg: rgb(246 244 239);
+  --card: rgb(255 255 255);
+  --ink: rgb(28 33 30);
+  --muted: rgb(104 112 107);
+  --line: rgb(226 222 213);
+  --brand: rgb(22 128 84);
+  --brand-soft: rgb(221 240 229);
+  --brand-ink: rgb(255 255 255); /* text on brand backgrounds */
+  --accent: rgb(222 150 22);
+  --accent-ink: rgb(43 28 0); /* text on accent backgrounds */
+  --danger: rgb(196 52 52);
+  --danger-ink: rgb(255 255 255);
+  color-scheme: light;
+}
+
+/* The same dark values twice: once for "follow the device", once for "always dark". */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: rgb(17 19 18);
+    --card: rgb(29 32 30);
+    --ink: rgb(234 237 235);
+    --muted: rgb(148 156 151);
+    --line: rgb(50 55 52);
+    --brand: rgb(78 190 134);
+    --brand-soft: rgb(28 58 43);
+    --brand-ink: rgb(8 28 18);
+    --accent: rgb(240 180 60);
+    --accent-ink: rgb(43 28 0);
+    --danger: rgb(240 110 110);
+    --danger-ink: rgb(40 8 8);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: rgb(17 19 18);
+  --card: rgb(29 32 30);
+  --ink: rgb(234 237 235);
+  --muted: rgb(148 156 151);
+  --line: rgb(50 55 52);
+  --brand: rgb(78 190 134);
+  --brand-soft: rgb(28 58 43);
+  --brand-ink: rgb(8 28 18);
+  --accent: rgb(240 180 60);
+  --accent-ink: rgb(43 28 0);
+  --danger: rgb(240 110 110);
+  --danger-ink: rgb(40 8 8);
+  color-scheme: dark;
+}
+
+/* inline: utilities point at var(--bg) etc. directly, so the dark-mode swap above applies. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-danger: var(--danger);
+  --color-danger-ink: var(--danger-ink);
+}
+
+@theme {
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-ink antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Tailwind 4 dropped the pointer cursor on buttons. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility card {
+  @apply rounded-2xl border border-line bg-card;
+}
+
+@utility input {
+  @apply w-full rounded-xl border border-line bg-card px-3 py-2.5 text-[15px] text-ink outline-none
+    placeholder:text-muted/70 focus:border-brand focus:ring-2 focus:ring-brand/20;
+}
+
+@utility label {
+  @apply mb-1 block text-sm font-medium text-muted;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[15px] font-semibold
+    transition active:scale-[0.98] disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-brand text-brand-ink hover:bg-brand/90;
+}
+
+@utility btn-secondary {
+  @apply btn border border-line bg-card text-ink hover:bg-bg;
+}
+
+@utility btn-ghost {
+  @apply btn text-brand hover:bg-brand-soft;
+}
+
+@utility chip {
+  @apply inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-line bg-card
+    px-3 py-1.5 text-sm text-ink transition;
+}
+
+@utility chip-on {
+  @apply border-brand bg-brand text-brand-ink;
+}
+
+/* Horizontal chip rows scroll without showing a scrollbar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

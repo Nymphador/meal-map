@@ -1,0 +1,15 @@
+node_modules/
+dist/
+# Android build output and the release signing key (never commit the key)
+android/app/build/
+android/.gradle/
+android/local.properties
+android/keystore.properties
+*.jks
+*.apk
+*.aab
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
