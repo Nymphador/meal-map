@@ -95,7 +95,7 @@ export function Sheet({ title, onClose, children, footer }: {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-6" onClick={onClose}>
       <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
-        className="pb-safe flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-2xl bg-card shadow-xl md:rounded-2xl">
+        className="pb-safe-ad flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-2xl bg-card shadow-xl md:rounded-2xl md:pb-0">
         <div className="flex items-start gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0 flex-1">{title}</div>
           <button className="-mr-1 rounded-full p-1.5 text-muted hover:bg-bg" onClick={onClose} aria-label="Close">

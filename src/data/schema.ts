@@ -29,10 +29,15 @@ export interface RecipeRow {
   nutrition: Record<string, string> | null; // the recipe's own panel, per serving
   tag_ids: number[];
   lines: LineRow[];
+  /** Which meals it suits. Missing on recipes saved before breakfast and lunch existed: read it with
+   * `mealTypes()` (logic/recipes.ts), which treats those as dinners. */
+  meal_types?: MealType[];
   created_at: string;
   updated_at: string;
   deleted: boolean;
 }
+
+export type MealType = "breakfast" | "lunch" | "dinner";
 
 export interface TagRow {
   id: number;
@@ -68,6 +73,74 @@ export interface IngredientRow {
   deleted: boolean;
 }
 
+// --- meal planner -----------------------------------------------------------------------
+
+/** One week, Monday to Sunday. Past weeks are kept so a whole week can be reused. */
+export interface PlanRow {
+  id: number;
+  week_start: string; // YYYY-MM-DD, always a Monday
+  budget: number | null; // null = the weekly_budget setting
+  created_at: string;
+}
+
+export type MealStatus = "planned" | "cooked" | "skipped" | "leftovers" | "eating_out";
+
+export interface PantryUse { pantry_item_id: number; quantity: number; emptied: boolean }
+
+/** One per day and slot (dinner). */
+export interface MealRow {
+  id: number;
+  plan_id: number;
+  date: string; // YYYY-MM-DD
+  slot: string;
+  recipe_id: number | null;
+  servings: number;
+  status: MealStatus;
+  locked: boolean; // kept when the rest of the week is regenerated
+  prev_last_cooked: string | null; // so Undo of Mark cooked puts the recipe's last_cooked back
+  pantry_used: PantryUse[] | null; // what Mark cooked took from the pantry, for Undo
+}
+
+// --- pantry and shopping ---------------------------------------------------------------
+
+/** One batch of something in stock. Cooking uses the batch that expires first. */
+export interface PantryRow {
+  id: number;
+  ingredient_id: number;
+  quantity: number | null; // in `unit`; null for items tracked by level only
+  unit: string; // g | ml | each (the ingredient's base unit)
+  level: "have" | "low" | "out" | null; // for spices and sauces, where the amount doesn't matter
+  location: "pantry" | "fridge" | "freezer";
+  purchased_on: string | null;
+  expires_on: string | null;
+  deleted: boolean;
+}
+
+/** One per week. Its items are worked out live; only the user's changes are stored. */
+export interface ShoppingListRow {
+  id: number;
+  plan_id: number;
+  status: "open" | "done";
+  done_at: string | null;
+  snapshot: Record<string, unknown> | null; // the list as it was when the shop was done, plus what to undo
+}
+
+/** A change to a worked-out line ("i:<ingredient id>"), or an extra the user added ("m:<random>"). */
+export interface ShoppingItemRow {
+  id: number;
+  list_id: number;
+  key: string;
+  ingredient_id: number | null;
+  is_manual: boolean;
+  name: string | null; // extras: what to buy ("toilet paper")
+  qty_needed: number | null; // an override of the amount, in `unit`
+  unit: string | null;
+  removed: boolean;
+  ticked: boolean;
+  actual_price: number | null;
+  position: number;
+}
+
 export interface DbData {
   version: 1;
   next_id: Record<string, number>;
@@ -75,8 +148,16 @@ export interface DbData {
   tags: TagRow[];
   ingredients: IngredientRow[];
   settings: Record<string, unknown>;
+  plans: PlanRow[];
+  meals: MealRow[];
+  pantry: PantryRow[];
+  shopping_lists: ShoppingListRow[];
+  shopping_items: ShoppingItemRow[];
 }
 
 export function emptyDb(): DbData {
-  return { version: 1, next_id: {}, recipes: [], tags: [], ingredients: [], settings: {} };
+  return {
+    version: 1, next_id: {}, recipes: [], tags: [], ingredients: [], settings: {},
+    plans: [], meals: [], pantry: [], shopping_lists: [], shopping_items: [],
+  };
 }

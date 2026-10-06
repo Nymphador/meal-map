@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { originHere } from "../nav";
 import { api } from "../api";
@@ -6,8 +6,10 @@ import {
   CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DotsIcon, GripIcon, HeartIcon, HistoryIcon, LockIcon,
   ShuffleIcon, SparkIcon, UsersIcon,
 } from "../components/Icons";
-import RefreshReport from "../components/RefreshReport";
-import { LeftoversCard, SpecialsCard } from "../components/WeekExtras";
+import { LeftoversCard } from "../components/WeekExtras";
+import { AdGateSheet, PremiumSheet, UpsellPopup } from "../components/Ads";
+import { adCoverMinutesLeft, markAdWatched } from "../monetise/ads";
+import { isAdFree, useAdFree, usePremium } from "../monetise/premium";
 import ReplaceSheet from "../components/ReplaceSheet";
 import { useLive } from "../live";
 import { useToast } from "../components/Toast";
@@ -25,8 +27,22 @@ function weekStartOf(iso: string): string {
 const STATUS_TEXT: Record<string, { title: string; note: string }> = {
   eating_out: { title: "Eating out", note: "No ingredients needed" },
   leftovers: { title: "Leftovers", note: "No ingredients needed" },
-  skipped: { title: "Skipped", note: "No dinner planned" },
+  skipped: { title: "Skipped", note: "Nothing planned" },
 };
+
+const SLOT_LABEL: Record<string, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner" };
+const slotDay = (m: PlanMeal) => (m.slot === "dinner" ? dayParts(m.date).long : `${dayParts(m.date).long} ${m.slot}`);
+
+/** The week's meals grouped by day, in date order (the API already orders breakfast, lunch, dinner). */
+function byDay(meals: PlanMeal[]): { date: string; meals: PlanMeal[] }[] {
+  const days: { date: string; meals: PlanMeal[] }[] = [];
+  for (const m of meals) {
+    const last = days[days.length - 1];
+    if (last?.date === m.date) last.meals.push(m);
+    else days.push({ date: m.date, meals: [m] });
+  }
+  return days;
+}
 
 type MenuAction =
   | { kind: "shuffle" } | { kind: "library" } | { kind: "clear" }
@@ -67,7 +83,7 @@ function MealMenu({ meal, meals, onAction }: { meal: PlanMeal; meals: PlanMeal[]
           {moving ? (
             <>
               <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Move to</p>
-              {meals.filter((m) => m.id !== meal.id).map((m) => (
+              {meals.filter((m) => m.id !== meal.id && m.slot === meal.slot).map((m) => (
                 <button key={m.id} type="button" className={item} disabled={m.status === "cooked"} onClick={() => act({ kind: "move", to: m })}>
                   <span className="w-24 font-medium">{dayParts(m.date).long}</span>
                   <span className="truncate text-xs text-muted">{m.recipe?.title ?? STATUS_TEXT[m.status]?.title ?? "Empty"}</span>
@@ -119,6 +135,17 @@ export default function WeekPage() {
   const [notes, setNotes] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [adGate, setAdGate] = useState(false);
+  const [premiumSheet, setPremiumSheet] = useState(false);
+  const adFree = useAdFree();
+  const premium = usePremium();
+  const [, tick] = useState(0); // keeps the "free for N more min" note current
+  useEffect(() => {
+    const timer = window.setInterval(() => tick((n) => n + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const [upsell, setUpsell] = useState(false);
+  const closeUpsell = useCallback(() => setUpsell(false), []);
   const [sheet, setSheet] = useState<{ meal: PlanMeal; tab: "suggest" | "library" } | null>(null);
   const [drag, setDrag] = useState<{ meal: PlanMeal; x: number; y: number; over: number | null } | null>(null);
 
@@ -151,6 +178,25 @@ export default function WeekPage() {
     }
   }
 
+  /** Generate asks for a video ad first while ads are on (or offers to remove them). */
+  function askToGenerate() {
+    if (isAdFree() || adCoverMinutesLeft() > 0) generate();
+    else setAdGate(true);
+  }
+
+  function afterAd(outcome: "rewarded" | "skipped" | "unavailable" | "bought") {
+    setAdGate(false);
+    if (outcome === "skipped") {
+      toast("Watch the video to the end to plan the week");
+      return;
+    }
+    generate(); // a video that couldn't load doesn't hold anyone up
+    if (outcome === "rewarded") {
+      markAdWatched();
+      setUpsell(true);
+    }
+  }
+
   async function generate() {
     const before = p.meals.map(snap);
     setGenerating(true);
@@ -171,12 +217,44 @@ export default function WeekPage() {
 
   function pick(meal: PlanMeal, recipeId: number, title: string) {
     setSheet(null);
-    change(patchMeal(meal, { recipe_id: recipeId }), () => `${dayParts(meal.date).long}: ${title}`, () => restore([snap(meal)]));
+    change(patchMeal(meal, { recipe_id: recipeId }), () => `${slotDay(meal)}: ${title}`, () => restore([snap(meal)]));
+  }
+
+  /** Breakfast and lunch on a day (Premium). */
+  function expandDay(date: string) {
+    if (!premium) return setPremiumSheet(true);
+    api<Plan>(`/api/plans/${p.id}/days/${date}/expand`, { method: "POST" }).then(setPlan).catch(fail);
+  }
+
+  /** Back to just dinner. Undo brings breakfast and lunch back as they were. */
+  function collapseDay(date: string, meals: PlanMeal[]) {
+    const extra = meals.filter((m) => m.slot !== "dinner");
+    const planned = extra.filter((m) => m.recipe).map((m) => m.recipe!.title);
+    if (planned.length && !window.confirm(`Take breakfast and lunch off ${dayParts(date).long}? (${planned.join(", ")})`)) return;
+    const before = extra.map(snap);
+    const slots = new Map(extra.map((m) => [m.id, m.slot]));
+    api<Plan>(`/api/plans/${p.id}/days/${date}/collapse`, { method: "POST" })
+      .then((next) => {
+        setPlan(next);
+        toast(`${dayParts(date).long}: just dinner`, { action: { label: "Undo", run: () => {
+          api<Plan>(`/api/plans/${p.id}/days/${date}/expand`, { method: "POST" })
+            .then((again) => {
+              // The meals come back as new rows: match them to what was there by slot.
+              const states = before.map((s) => {
+                const fresh = again.meals.find((m) => m.date === date && m.slot === slots.get(s.id));
+                return fresh ? { ...s, id: fresh.id } : null;
+              }).filter((s): s is MealState => !!s);
+              return api<Plan>(`/api/plans/${p.id}/restore`, { body: { meals: states } });
+            })
+            .then(setPlan).catch(fail);
+        } } });
+      })
+      .catch(fail);
   }
 
   /** Leftovers card: put the recipe on the first night with nothing planned. */
   function addLeftoverRecipe(recipeId: number, title: string) {
-    const free = p.meals.find((m) => m.status === "planned" && !m.recipe);
+    const free = p.meals.find((m) => m.slot === "dinner" && m.status === "planned" && !m.recipe);
     if (!free) return toast("Every night has a meal. Use Replace on one to swap this in.", { error: true });
     pick(free, recipeId, title);
   }
@@ -184,11 +262,12 @@ export default function WeekPage() {
   function shuffle(meal: PlanMeal) {
     setSheet(null);
     change(api<Plan>(`/api/plans/${p.id}/meals/${meal.id}/shuffle`, { method: "POST" }),
-      (next) => `${dayParts(meal.date).long}: ${titleOn(next, meal)}`, () => restore([snap(meal)]));
+      (next) => `${slotDay(meal)}: ${titleOn(next, meal)}`, () => restore([snap(meal)]));
   }
 
   function move(meal: PlanMeal, to: PlanMeal) {
     if (to.status === "cooked" || meal.status === "cooked") return toast("Cooked meals stay on the day they were cooked", { error: true });
+    if (to.slot !== meal.slot) return toast(`Drop a ${meal.slot} on another day's ${meal.slot}`, { error: true });
     // Swap locally first so the drop feels instant; the server's answer replaces it a moment later.
     const swapped = p.meals.map((m) =>
       m.id === meal.id ? { ...to, id: m.id, date: m.date } : m.id === to.id ? { ...meal, id: m.id, date: m.date } : m);
@@ -197,7 +276,7 @@ export default function WeekPage() {
     call()
       .then((next) => {
         setPlan(next);
-        toast(`Moved to ${dayParts(to.date).long}`, { action: { label: "Undo", run: () => { call().then(setPlan).catch(fail); } } });
+        toast(`Moved to ${slotDay(to)}`, { action: { label: "Undo", run: () => { call().then(setPlan).catch(fail); } } });
       })
       .catch((e) => { fail(e); load(); });
   }
@@ -217,7 +296,7 @@ export default function WeekPage() {
         if (meal.status === "cooked") return change(patchMeal(meal, { status: "planned" }));
         if (a.status === "planned") return setSheet({ meal, tab: "suggest" });
         return change(patchMeal(meal, { status: a.status }),
-          () => `${dayParts(meal.date).long}: ${STATUS_TEXT[a.status].title}`, () => restore([snap(meal)]));
+          () => `${slotDay(meal)}: ${STATUS_TEXT[a.status].title}`, () => restore([snap(meal)]));
     }
   }
 
@@ -247,6 +326,7 @@ export default function WeekPage() {
   const anyPlanned = p.meals.some((m) => m.recipe || m.status !== "planned");
   const budget = p.budget;
   const unpriced = p.planned_meals - p.costed_meals;
+  const days = byDay(p.meals);
 
   return (
     <>
@@ -291,7 +371,7 @@ export default function WeekPage() {
               {p.nutrition?.average && (
                 <p className="mt-1 text-sm">
                   Average dinner: {p.nutrition.average.kcal} kcal · {p.nutrition.average.protein} g protein
-                  <span className="text-muted"> ({p.nutrition.meals} of {p.planned_meals} known)</span>
+                  <span className="text-muted"> ({p.nutrition.meals} of {p.nutrition.dinners} known)</span>
                 </p>
               )}
               <p className="mt-1 text-xs text-muted">
@@ -303,15 +383,18 @@ export default function WeekPage() {
           ) : (
             <>
               <p className="font-semibold">Nothing planned yet</p>
-              <p className="text-sm text-muted">Generate fills the week with dinners from your library, using your rules in Settings.</p>
+              <p className="text-sm text-muted">Generate fills the week with dinners from your library (and breakfast and lunch on days you open up), using your rules in Settings.</p>
             </>
           )}
         </div>
         <div className="flex w-full flex-col gap-1 sm:w-auto sm:items-end">
-          <button type="button" className="btn-primary w-full sm:w-auto" onClick={generate} disabled={generating}>
+          <button type="button" className="btn-primary w-full sm:w-auto" onClick={askToGenerate} disabled={generating}>
             <SparkIcon className="h-5 w-5" /> {generating ? "Planning…" : anyPlanned ? "Regenerate" : "Generate plan"}
           </button>
           {anyPlanned && <p className="text-[11px] text-muted">Keeps locked, cooked and skipped nights</p>}
+          {!adFree && adCoverMinutesLeft() > 0 && (
+            <p className="text-[11px] text-muted">No ad to regenerate for {adCoverMinutesLeft()} more min</p>
+          )}
         </div>
         {p.nutrition_rules.length > 0 && (
           <p className="w-full border-t border-line pt-2 text-xs text-muted">
@@ -321,8 +404,6 @@ export default function WeekPage() {
         )}
       </section>
 
-      {isCurrent && <RefreshReport />}
-      {isCurrent && <SpecialsCard />}
       <LeftoversCard planId={p.id} mealsKey={p.meals.map((m) => `${m.id}:${m.recipe?.id ?? m.status}:${m.servings}`).join(",")}
         onAdd={addLeftoverRecipe} />
       </aside>
@@ -339,24 +420,31 @@ export default function WeekPage() {
       )}
 
       <div className="grid grid-cols-1 gap-2 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        {p.meals.map((m) => {
-          const day = dayParts(m.date);
-          const isToday = m.date === p.today;
-          const past = m.date < p.today;
-          const status = STATUS_TEXT[m.status];
-          const dragging = drag?.meal.id === m.id;
-          const over = drag && drag.over === m.id && !dragging;
+        {days.map(({ date, meals }) => {
+          const day = dayParts(date);
+          const isToday = date === p.today;
+          const past = date < p.today;
+          const expanded = meals.some((m) => m.slot !== "dinner");
           return (
-            <div key={m.id} data-meal-id={m.id}
-              className={`card flex gap-3 p-3 transition ${over ? "border-brand ring-2 ring-brand/30" : ""} ${
-                dragging ? "opacity-40" : ""} ${isToday ? "border-brand/60" : ""}`}>
+            <div key={date} className={`card p-3 ${isToday ? "border-brand/60" : ""}`}>
+            <div className="flex gap-3">
               <div className={`w-10 shrink-0 pt-0.5 text-center ${past ? "opacity-60" : ""}`}>
                 <p className="text-xs font-semibold uppercase text-muted">{day.short}</p>
-                <p className="text-lg font-bold leading-tight">{parseDay(m.date).getDate()}</p>
+                <p className="text-lg font-bold leading-tight">{parseDay(date).getDate()}</p>
                 {isToday && <p className="text-[10px] font-bold uppercase text-brand">Today</p>}
               </div>
 
+              <div className="min-w-0 flex-1 divide-y divide-line">
+              {meals.map((m) => {
+              const status = STATUS_TEXT[m.status];
+              const dragging = drag?.meal.id === m.id;
+              const over = drag && drag.over === m.id && !dragging && drag.meal.slot === m.slot;
+              return (
+              <div key={m.id} data-meal-id={m.id}
+                className={`-mx-2 flex gap-2 rounded-xl px-2 py-2 transition first:pt-0 last:pb-0 ${over ? "bg-brand-soft ring-2 ring-brand/30" : ""} ${
+                  dragging ? "opacity-40" : ""}`}>
               <div className="min-w-0 flex-1">
+                {expanded && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{SLOT_LABEL[m.slot] ?? m.slot}</p>}
                 {m.recipe && (m.status === "planned" || m.status === "cooked") ? (
                   <div className="flex gap-3">
                     <Link to={`/recipes/${m.recipe.id}`} state={originHere(location)} className="shrink-0">
@@ -369,18 +457,15 @@ export default function WeekPage() {
                       </Link>
                       <p className="mt-0.5 flex flex-wrap gap-x-3 text-sm text-muted">
                         {m.recipe.total_min !== null && <span className="flex items-center gap-1"><ClockIcon className="h-4 w-4" />{formatMinutes(m.recipe.total_min)}</span>}
-                        <span title={m.cost_stale ? "Some prices are over a week old" : m.cost_complete ? "" : "Some ingredients aren't priced yet"}>
+                        <span title={m.cost_complete ? "" : "Some ingredients aren't priced yet"}>
                           {m.cost === null ? "Cost —" : `${money(m.cost)}${m.cost_complete ? "" : "+"}`}
-                          {m.cost_stale && m.cost !== null && <span className="ml-1 text-xs text-accent">old prices</span>}
                         </span>
                         <span>{m.servings} serves</span>
                         {m.macros?.complete && m.macros.kcal !== null && <span>{m.macros.kcal} kcal</span>}
                       </p>
-                      {m.status === "cooked" ? (
+                      {m.status === "cooked" && (
                         <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-brand"><CheckIcon className="h-4 w-4" /> Cooked</p>
-                      ) : m.specials[0] ? (
-                        <p className="mt-1 truncate text-xs font-medium text-accent">{m.specials[0]}</p>
-                      ) : null}
+                      )}
                     </div>
                   </div>
                 ) : status ? (
@@ -392,7 +477,7 @@ export default function WeekPage() {
                   <div className="py-1">
                     <p className="font-semibold text-muted">Nothing planned</p>
                     <button type="button" className="mt-1 text-sm font-semibold text-brand" onClick={() => setSheet({ meal: m, tab: "suggest" })}>
-                      Choose a dinner
+                      Choose a {m.slot}
                     </button>
                   </div>
                 )}
@@ -427,6 +512,17 @@ export default function WeekPage() {
                   </button>
                 )}
               </div>
+              </div>
+              );
+              })}
+              </div>
+            </div>
+            <div className="mt-2 flex justify-end border-t border-line pt-1.5">
+              <button type="button" className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand hover:bg-bg"
+                onClick={() => (expanded ? collapseDay(date, meals) : expandDay(date))}>
+                {expanded ? "Just dinner" : <>{!premium && <LockIcon className="h-3.5 w-3.5" />} + Breakfast &amp; lunch</>}
+              </button>
+            </div>
             </div>
           );
         })}
@@ -437,9 +533,13 @@ export default function WeekPage() {
       {drag && (
         <div className="pointer-events-none fixed z-50 max-w-56 truncate rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-brand-ink shadow-lg"
           style={{ left: drag.x + 14, top: drag.y - 18 }}>
-          {drag.meal.recipe?.title ?? STATUS_TEXT[drag.meal.status]?.title ?? "Empty night"}
+          {drag.meal.recipe?.title ?? STATUS_TEXT[drag.meal.status]?.title ?? `Empty ${drag.meal.slot}`}
         </div>
       )}
+
+      {adGate && <AdGateSheet onClose={() => setAdGate(false)} onDone={afterAd} />}
+      {upsell && <UpsellPopup onClose={closeUpsell} />}
+      {premiumSheet && <PremiumSheet onClose={() => setPremiumSheet(false)} />}
 
       {sheet && (
         <ReplaceSheet plan={p} meal={sheet.meal} initialTab={sheet.tab} onClose={() => setSheet(null)}

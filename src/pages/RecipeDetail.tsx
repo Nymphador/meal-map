@@ -2,12 +2,51 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { originOf, useBackToOrigin } from "../nav";
 import { api } from "../api";
-import { BackIcon, ClockIcon, EditIcon, ExternalIcon, TrashIcon, UsersIcon } from "../components/Icons";
+import { PremiumSheet } from "../components/Ads";
+import { BackIcon, ClockIcon, EditIcon, ExternalIcon, LockIcon, TrashIcon, UsersIcon } from "../components/Icons";
+import { usePremium } from "../monetise/premium";
 import { MACROS } from "../components/Nutrition";
 import { useToast } from "../components/Toast";
 import { ErrorBox, FavouriteButton, RecipePhoto, Spinner, Stars } from "../components/ui";
 import { formatAmount, formatMinutes, hostOf, money, scaleLine } from "../format";
-import type { Costing, Recipe, Settings } from "../types";
+import type { Costing, MealType, Recipe, Settings } from "../types";
+
+const MEALS: [MealType, string][] = [["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"]];
+
+/** On/off switches for which meals the planner may use this recipe for. Breakfast and lunch are Premium. */
+function MealSwitches({ types, onChange }: { types: MealType[]; onChange: (next: MealType[]) => void }) {
+  const premium = usePremium();
+  const toast = useToast();
+  const [upsell, setUpsell] = useState(false);
+  function flip(type: MealType) {
+    if (type !== "dinner" && !premium) return setUpsell(true);
+    const on = types.includes(type);
+    if (on && types.length === 1) return toast("A recipe needs at least one meal", { error: true });
+    onChange(on ? types.filter((t) => t !== type) : MEALS.map(([t]) => t).filter((t) => t === type || types.includes(t)));
+  }
+  return (
+    <section className="card mt-3 p-3">
+      <p className="text-sm font-semibold">Plan it for</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {MEALS.map(([type, label]) => {
+          const locked = type !== "dinner" && !premium;
+          const on = types.includes(type) && !locked;
+          return (
+            <button key={type} type="button" role="switch" aria-checked={on} onClick={() => flip(type)}
+              className="flex items-center justify-between gap-2 rounded-xl border border-line px-2.5 py-2 text-sm hover:bg-bg">
+              <span className="flex items-center gap-1">{locked && <LockIcon className="h-3.5 w-3.5 text-muted" />}{label}</span>
+              <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${on ? "bg-brand" : "bg-line"}`}>
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-card shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {!premium && <p className="mt-2 text-xs text-muted">Breakfast and lunch planning come with Premium.</p>}
+      {upsell && <PremiumSheet onClose={() => setUpsell(false)} />}
+    </section>
+  );
+}
 
 /** Per-serve macros: the recipe's own panel when it has one, otherwise estimated from the ingredients. */
 function NutritionSection({ recipe }: { recipe: Recipe }) {
@@ -76,7 +115,7 @@ export default function RecipeDetail() {
   if (error) return <ErrorBox message={error} />;
   if (!recipe) return <Spinner />;
 
-  async function patch(body: { is_favourite?: boolean; rating?: number }) {
+  async function patch(body: { is_favourite?: boolean; rating?: number; meal_types?: MealType[] }) {
     const prev = recipe!;
     setRecipe({ ...prev, ...body, rating: body.rating !== undefined ? body.rating || null : prev.rating });
     try {
@@ -161,6 +200,8 @@ export default function RecipeDetail() {
           {costing && !costing.complete && <p className="text-[11px] text-muted">{costing.per_serve === null ? "add prices" : "so far"}</p>}
         </Link>
       </div>
+
+      <MealSwitches types={recipe.meal_types} onChange={(meal_types) => patch({ meal_types })} />
 
       <div className="mt-6 md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-8">
         <section>

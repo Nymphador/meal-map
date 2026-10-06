@@ -21,6 +21,11 @@ export function openDb(text: string | null, save: ((text: string) => Promise<voi
   persist = save;
 }
 
+/** Restoring a backup: replaces everything (the caller commits to save it). */
+export function replaceData(raw: Partial<DbData>) {
+  data = migrate(raw);
+}
+
 /** Tests: a fresh empty database with no saving. */
 export function resetDb() {
   data = emptyDb();

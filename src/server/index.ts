@@ -2,5 +2,9 @@
 import "./recipes";
 import "./ingredients";
 import "./settings";
+import "./plans";
+import "./pantry";
+import "./shopping";
+import "./backup";
 
 export { dispatch } from "./router";

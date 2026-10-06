@@ -1,5 +1,5 @@
 @echo off
-rem Builds a test version of the Android app (MealPlanner-test.apk) to install on a phone directly.
+rem Builds a test version of Meal Map (MealMap-test.apk) to install on a phone directly.
 rem The signed release for the Play Store is set up later. Needs Android Studio (its Java and SDK).
 rem Only run one build at a time: two at once lock each other out.
 setlocal
@@ -27,10 +27,10 @@ pushd android
 > local.properties echo sdk.dir=%ANDROID_HOME:\=/%
 call .\gradlew.bat assembleDebug || (popd & goto :error)
 popd
-copy /y android\app\build\outputs\apk\debug\app-debug.apk MealPlanner-test.apk >nul || goto :error
+copy /y android\app\build\outputs\apk\debug\app-debug.apk MealMap-test.apk >nul || goto :error
 
 echo.
-echo  Done: MealPlanner-test.apk is in this folder.
+echo  Done: MealMap-test.apk is in this folder.
 echo.
 pause
 goto :eof

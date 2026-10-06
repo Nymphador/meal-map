@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ApiError, writeCache } from "../api";
+import { api } from "../api";
 import { useLive } from "../live";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlusIcon } from "../components/Icons";
 import { useToast } from "../components/Toast";
 import { ErrorBox, PageHeader, Sheet, Spinner } from "../components/ui";
-import { addDays, isoDay, money, parseDay, shortDate, STORE_DOT, STORE_NAMES, STORES, unitPrice, weekRange } from "../format";
-import type { PantryData, ShoppingData, ShopLine, Store } from "../types";
+import PriceEditor from "../components/PriceEditor";
+import { addDays, isoDay, money, parseDay, weekRange } from "../format";
+import { shareText as openShareSheet } from "../native";
+import type { PantryData, PriceUnit, ShoppingData, ShopLine } from "../types";
 
 const CATEGORY_ORDER = ["produce", "meat", "seafood", "dairy", "bakery", "pantry", "frozen", "other"];
 const CATEGORY_LABEL: Record<string, string> = {
@@ -19,64 +21,26 @@ function weekStartOf(iso: string): string {
 }
 
 function Totals({ data }: { data: ShoppingData }) {
-  const { totals, recommendation: rec, spend } = data;
-  const tile = (label: string, value: number, note: string | null, on: boolean, dot?: string) => (
-    <div className={`rounded-xl border px-3 py-2 ${on ? "border-brand bg-brand-soft" : "border-line"}`}>
-      <p className="flex items-center gap-1.5 text-xs text-muted">{dot && <span className={`h-2 w-2 rounded-full ${dot}`} />}{label}</p>
-      <p className="text-lg font-bold">{money(value)}</p>
-      {note && <p className="text-[11px] text-muted">{note}</p>}
-    </div>
-  );
-  const missing = (n: number) => (n ? `${n} item${n > 1 ? "s" : ""} not priced` : null);
+  const { totals, budget } = data;
   return (
     <section className="card mb-3 p-4">
-      <div className="grid grid-cols-3 gap-2">
-        {tile("All Woolworths", totals.woolworths.total, missing(totals.woolworths.missing), rec.mode === "woolworths", STORE_DOT.woolworths)}
-        {tile("All Coles", totals.coles.total, missing(totals.coles.missing), rec.mode === "coles", STORE_DOT.coles)}
-        {tile("Best split", totals.split, null, rec.mode === "split")}
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted">Estimated total</p>
+          <p className="text-2xl font-bold">{money(totals.estimate)}</p>
+        </div>
+        {budget ? (
+          <p className={`text-right text-sm ${totals.spend > budget ? "text-danger" : "text-muted"}`}>
+            Budget {money(budget)}<br />
+            {totals.spend > budget ? `${money(totals.spend - budget)} over` : `${money(budget - totals.spend)} to spare`}
+          </p>
+        ) : null}
       </div>
-      <p className="mt-2 text-sm">{rec.text}</p>
-      {data.budget ? (
-        <p className={`mt-1 text-sm ${spend.total > data.budget ? "text-danger" : ""}`}>
-          Budget {money(data.budget)}: {spend.total > data.budget
-            ? `${money(spend.total - data.budget)} over`
-            : `${money(data.budget - spend.total)} to spare`}
-        </p>
-      ) : null}
       <p className="mt-1 text-xs text-muted">
-        Your list: {money(spend.total)}
-        {spend.woolworths > 0 && spend.coles > 0 && ` (Woolworths ${money(spend.woolworths)} + Coles ${money(spend.coles)})`}
-        {spend.unpriced > 0 && ` · ${spend.unpriced} without a price`}
+        Whole packs of the sizes you priced.
+        {totals.unpriced > 0 && <> {totals.unpriced} item{totals.unpriced > 1 ? "s" : ""} without a price: tap one to add it.</>}
       </p>
     </section>
-  );
-}
-
-function StoreChoice({ line, onPick }: { line: ShopLine; onPick: (s: Store | null) => void }) {
-  return (
-    <div className="mt-2 grid grid-cols-2 gap-2">
-      {STORES.map((s) => {
-        const sp = line.stores[s];
-        const on = line.chosen_store === s;
-        return (
-          <button key={s} type="button" disabled={!sp || sp.cost === null}
-            onClick={() => onPick(on && line.store_overridden ? null : s)}
-            className={`rounded-xl border p-2 text-left text-xs transition disabled:opacity-40 ${on ? "border-brand bg-brand-soft" : "border-line hover:bg-bg"}`}>
-            <p className="flex items-center gap-1.5 font-semibold">
-              <span className={`h-2 w-2 rounded-full ${STORE_DOT[s]}`} />{STORE_NAMES[s]}
-              <span className="ml-auto">{sp?.cost != null ? money(sp.cost) : "—"}</span>
-            </p>
-            {sp?.buy_text ? <p className="mt-0.5 line-clamp-2 text-muted">{sp.buy_text}</p>
-              : <p className="mt-0.5 text-muted">{sp?.problem ?? "Not matched yet"}</p>}
-            {sp?.unit_price != null && <p className="text-muted">{unitPrice(sp.unit_price, sp.unit_measure)}</p>}
-            {sp?.special && <p className="font-medium text-accent">{sp.special}</p>}
-            {sp?.out_of_stock && <p className="text-danger">Out of stock online</p>}
-            {sp?.stale && <p className="text-accent">Price from {shortDate(sp.price_date) || "a while ago"}: may be out of date</p>}
-            {line.cheaper === s && <p className="font-semibold text-brand">Cheaper</p>}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -87,7 +51,6 @@ function Line({ line, shopping, done, onChange, onHave }: {
   const [open, setOpen] = useState(false);
   const [qty, setQty] = useState("");
   const [paid, setPaid] = useState(line.actual_price?.toString() ?? "");
-  const sp = line.chosen_store ? line.stores[line.chosen_store] : undefined;
   const big = shopping && !done;
 
   return (
@@ -105,10 +68,10 @@ function Line({ line, shopping, done, onChange, onHave }: {
             <span className="ml-2 font-normal text-muted">{line.needed_text}</span>
           </p>
           <p className="text-sm text-muted">
-            {sp?.buy_text ?? (line.ingredient_id ? "No price yet" : "Extra")}
+            {line.pack ? `Buy ${line.pack.buy_text}` : line.ingredient_id ? "No price yet" : "Extra"}
             {line.in_stock && ` · have ${line.in_stock}`}
           </p>
-          {sp?.leftover_text && !shopping && <p className="text-xs text-muted">{sp.leftover_text} left over goes to the pantry</p>}
+          {line.pack?.leftover_text && !shopping && <p className="text-xs text-muted">{line.pack.leftover_text} left over goes to the pantry</p>}
           {line.source.includes("staple") && !shopping && <p className="text-xs text-accent">Staple running low</p>}
           {line.unconverted.length > 0 && !shopping && (
             <p className="text-xs text-accent">Not counted: {line.unconverted.join("; ")}</p>
@@ -116,7 +79,6 @@ function Line({ line, shopping, done, onChange, onHave }: {
         </button>
         <div className="shrink-0 text-right">
           <p className={`font-semibold ${big ? "text-lg" : ""}`}>{line.est_price != null ? money(line.est_price) : ""}</p>
-          {line.store_overridden && !shopping && <p className="text-[11px] text-muted">your pick</p>}
         </div>
       </div>
 
@@ -138,7 +100,13 @@ function Line({ line, shopping, done, onChange, onHave }: {
 
       {open && !shopping && !done && (
         <div className="ml-9 mt-2 space-y-2">
-          {line.ingredient_id && <StoreChoice line={line} onPick={(s) => onChange({ chosen_store: s })} />}
+          {line.ingredient_id && (
+            <div>
+              <p className="mb-1 text-xs text-muted">{line.price_text ? `You pay ${line.price_text}` : "What do you pay for it?"}</p>
+              <PriceEditor compact key={line.price_text ?? "none"}
+                ingredient={{ id: line.ingredient_id, ...priceParts(line), default_unit: line.unit ?? "g" }} />
+            </div>
+          )}
           {line.meals.length > 0 && <p className="text-xs text-muted">For {line.meals.join(", ")}</p>}
           <div className="flex flex-wrap items-center gap-2">
             {line.unit && (
@@ -163,6 +131,13 @@ function Line({ line, shopping, done, onChange, onHave }: {
   );
 }
 
+/** The entered price for the editor: price_text is "$3.50 for 500 g". */
+function priceParts(line: ShopLine): { price: number | null; price_amount: number | null; price_unit: PriceUnit | null } {
+  const m = /^\$([\d.]+) for ([\d.]+) (g|kg|ml|l|items?)$/.exec(line.price_text ?? "");
+  if (!m) return { price: null, price_amount: null, price_unit: null };
+  return { price: Number(m[1]), price_amount: Number(m[2]), price_unit: (m[3].startsWith("item") ? "each" : m[3]) as PriceUnit };
+}
+
 export default function ShoppingPage() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -175,12 +150,11 @@ export default function ShoppingPage() {
   const [busy, setBusy] = useState(false);
   const [shareText, setShareText] = useState<string | null>(null);
 
-  const listPath = week ? `/api/shopping/week/${week}` : "/api/shopping/current";
   function load() {
     setError("");
-    api<ShoppingData>(listPath).then(setData).catch((e) => setError(e.message));
+    api<ShoppingData>(week ? `/api/shopping/week/${week}` : "/api/shopping/current").then(setData).catch((e) => setError(e.message));
   }
-  useLive(["shopping"], load);
+  useLive(["shopping", "ingredients"], load);
   useEffect(() => {
     load();
     api<PantryData>("/api/pantry").then((p) => setExpiring(p.expiring)).catch(() => {});
@@ -195,21 +169,15 @@ export default function ShoppingPage() {
   async function change(line: ShopLine, changes: Record<string, unknown>) {
     // Ticks feel instant; everything else waits for the recalculated list.
     const local = Object.keys(changes).every((k) => k === "ticked" || k === "actual_price");
-    const optimistic = local ? { ...d, items: d.items.map((l) => (l.key === line.key ? { ...l, ...changes } as ShopLine : l)) } : d;
-    if (local) setData(optimistic);
+    if (local) setData({ ...d, items: d.items.map((l) => (l.key === line.key ? { ...l, ...changes } as ShopLine : l)) });
     try {
-      // Ticks and prices paid are safe to send later: offline, they wait on the phone.
       const next = await api<ShoppingData>(`/api/shopping/${d.list.id}/items/${encodeURIComponent(line.key)}`,
-        { method: "PATCH", body: changes, queue: local });
+        { method: "PATCH", body: changes });
       setData(next);
       if (changes.removed) {
         toast(`Removed ${line.name}`, { action: { label: "Undo", run: () => { change(line, { removed: false }); } } });
       }
     } catch (e) {
-      if (e instanceof ApiError && e.queued) {
-        writeCache(listPath, optimistic); // so the ticks survive the app being closed before it syncs
-        return;
-      }
       fail(e);
       load();
     }
@@ -258,41 +226,27 @@ export default function ShoppingPage() {
   /** The list as plain text for Notes, a message to your partner, etc. Unticked items only. */
   function listText(): string {
     const out = [`Shopping list, week of ${weekRange(d.list.week_start)}`];
-    for (const { store, lines } of groups) {
-      const todo = sortLines(lines).filter((l) => !l.ticked);
-      if (!todo.length) continue;
-      const total = todo.reduce((t, l) => t + (l.est_price ?? 0), 0);
-      out.push("", store ? `${STORE_NAMES[store].toUpperCase()} (about ${money(total)})` : "OTHER");
-      let cat = "";
-      for (const l of todo) {
-        if (store && l.category !== cat) {
-          cat = l.category;
-          out.push(`${CATEGORY_LABEL[cat] ?? cat}:`);
-        }
-        const sp = l.chosen_store ? l.stores[l.chosen_store] : undefined;
-        const what = sp?.packs.length ? sp.packs.map((p) => `${p.count} x ${p.name}`).join(" + ") : l.needed_text;
-        out.push(`- ${l.name.charAt(0).toUpperCase() + l.name.slice(1)}: ${what}${l.est_price != null ? ` (${money(l.est_price)})` : ""}`);
+    let cat = "";
+    for (const l of sortLines(d.items).filter((x) => !x.ticked)) {
+      if (l.category !== cat) {
+        cat = l.category;
+        out.push("", `${CATEGORY_LABEL[cat] ?? cat}:`);
       }
+      const what = l.pack ? l.pack.buy_text : l.needed_text;
+      out.push(`- ${l.name.charAt(0).toUpperCase() + l.name.slice(1)}${what ? `: ${what}` : ""}${l.est_price != null ? ` (${money(l.est_price)})` : ""}`);
     }
+    out.push("", `About ${money(d.totals.estimate)}`);
     return out.join("\n");
   }
 
   async function share() {
     const text = listText();
-    const nav = navigator as Navigator & { share?: (d: { title: string; text: string }) => Promise<void> };
-    if (nav.share) {
-      try {
-        await nav.share({ title: "Shopping list", text });
-        return;
-      } catch {
-        // cancelled, or not allowed here: fall back to copying
-      }
-    }
+    if (await openShareSheet("Shopping list", text)) return;
     try {
       await navigator.clipboard.writeText(text);
       toast("Shopping list copied");
     } catch {
-      setShareText(text); // no clipboard on plain http: show it to copy by hand
+      setShareText(text); // no clipboard: show it to copy by hand
     }
   }
 
@@ -305,12 +259,7 @@ export default function ShoppingPage() {
     }
   }
 
-  // Group by store (the one you'll buy from), then aisle; ticked items sink to the bottom while shopping.
-  const groups: { store: Store | null; lines: ShopLine[] }[] = [];
-  for (const store of [...STORES, null] as (Store | null)[]) {
-    const lines = d.items.filter((l) => l.chosen_store === store);
-    if (lines.length) groups.push({ store, lines });
-  }
+  // By aisle; ticked items sink to the bottom while shopping.
   const sortLines = (lines: ShopLine[]) => [...lines].sort((a, b) =>
     (shopping ? Number(a.ticked) - Number(b.ticked) : 0) ||
     CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) || a.name.localeCompare(b.name));
@@ -407,32 +356,24 @@ export default function ShoppingPage() {
 
       <div className="min-w-0 xl:col-start-1 xl:row-start-1">
 
-      <div className="space-y-3">
-        {groups.map(({ store, lines }) => {
-          const cats = shopping ? [null] : CATEGORY_ORDER.filter((c) => lines.some((l) => l.category === c));
-          return (
-            <section key={store ?? "none"} className="card overflow-hidden">
-              <h2 className="flex items-center gap-2 border-b border-line px-3 py-2 font-semibold">
-                {store && <span className={`h-2.5 w-2.5 rounded-full ${STORE_DOT[store]}`} />}
-                {store ? STORE_NAMES[store] : "No price yet / extras"}
-                <span className="ml-auto text-sm font-normal text-muted">
-                  {store && money(lines.reduce((t, l) => t + (l.est_price ?? 0), 0))} · {lines.filter((l) => l.ticked).length}/{lines.length}
-                </span>
-              </h2>
-              {cats.map((cat) => (
-                <div key={cat ?? "all"}>
-                  {cat && <p className="bg-bg px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">{CATEGORY_LABEL[cat] ?? cat}</p>}
-                  <ul className="divide-y divide-line">
-                    {sortLines(cat ? lines.filter((l) => l.category === cat) : lines).map((l) => (
-                      <Line key={l.key} line={l} shopping={shopping} done={done} onChange={(c) => change(l, c)} onHave={() => have(l)} />
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </section>
-          );
-        })}
-      </div>
+      {d.items.length > 0 && (
+        <section className="card overflow-hidden">
+          <h2 className="flex items-center gap-2 border-b border-line px-3 py-2 font-semibold">
+            To buy
+            <span className="ml-auto text-sm font-normal text-muted">{tickedCount}/{d.items.length}</span>
+          </h2>
+          {(shopping ? [null] : CATEGORY_ORDER.filter((c) => d.items.some((l) => l.category === c))).map((cat) => (
+            <div key={cat ?? "all"}>
+              {cat && <p className="bg-bg px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted">{CATEGORY_LABEL[cat] ?? cat}</p>}
+              <ul className="divide-y divide-line">
+                {sortLines(cat ? d.items.filter((l) => l.category === cat) : d.items).map((l) => (
+                  <Line key={l.key} line={l} shopping={shopping} done={done} onChange={(c) => change(l, c)} onHave={() => have(l)} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      )}
 
       {shopping && !done && (
         <button type="button" className="btn-primary mt-4 w-full py-3 text-base" disabled={busy} onClick={finish}>

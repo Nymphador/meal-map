@@ -203,7 +203,7 @@ export default function RecipeEditor() {
         <TagsField all={allTags} value={draft.tags} onChange={(t) => set("tags", t)} />
       </div>
 
-      <div className="pb-safe sticky bottom-16 z-20 -mx-4 mt-6 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur-sm md:bottom-0 md:mx-0 md:rounded-xl md:border">
+      <div className="bottom-above-nav sticky z-20 -mx-4 mt-6 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur-sm md:bottom-[var(--ad-h,0px)] md:mx-0 md:rounded-xl md:border">
         <div className="flex gap-2">
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>Cancel</button>
           <button className="btn-primary flex-1" disabled={saving}>

@@ -42,12 +42,17 @@ export function detailOut(ing: IngredientRow, linked = 0) {
   };
 }
 
+/** Every searched word appears somewhere: "chick thigh" finds chicken thigh fillet. */
+function matchesWords(text: string, q: string): boolean {
+  return q.split(/\s+/).filter(Boolean).every((w) => text.includes(w));
+}
+
 route("GET", "/api/ingredients", ({ query }) => {
   const q = (query.get("q") ?? "").trim().toLowerCase();
   const status = query.get("status") ?? "used";
   const counts = recipeCounts();
   return db().ingredients.filter((i) => !i.deleted)
-    .filter((i) => !q || i.name.includes(q) || i.aliases.some((a) => a.includes(q)))
+    .filter((i) => matchesWords([i.name, ...i.aliases].join(" "), q))
     .filter((i) => status === "all" || (counts.get(i.id) ?? 0) > 0 || i.is_staple)
     .filter((i) => status !== "unpriced" || (!hasPrice(i) && !i.never_buy))
     .sort((a, b) => a.name.localeCompare(b.name))

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, qs } from "../api";
 import { dayParts, formatMinutes, money } from "../format";
-import type { Alternative, Macros, Plan, PlanMeal, RecipeSummary } from "../types";
+import type { Alternative, Macros, MealType, Plan, PlanMeal, RecipeSummary } from "../types";
 import { ClockIcon, HeartIcon, SearchIcon, ShuffleIcon } from "./Icons";
 import { macroLine } from "./Nutrition";
 import { ErrorBox, RecipePhoto, Sheet, Spinner } from "./ui";
@@ -65,7 +65,7 @@ export default function ReplaceSheet({ plan, meal, initialTab = "suggest", onPic
     <Sheet onClose={onClose}
       title={
         <>
-          <p className="font-semibold">{meal.recipe ? `Replace ${day}'s dinner` : `Choose ${day}'s dinner`}</p>
+          <p className="font-semibold">{meal.recipe ? `Replace ${day}'s ${meal.slot}` : `Choose ${day}'s ${meal.slot}`}</p>
           {meal.recipe && <p className="truncate text-sm text-muted">Now: {meal.recipe.title}</p>}
           <div className="mt-2 flex gap-1.5">
             <button type="button" className={`chip ${tab === "suggest" ? "chip-on" : ""}`} onClick={() => setTab("suggest")}>Suggestions</button>
@@ -107,7 +107,8 @@ export default function ReplaceSheet({ plan, meal, initialTab = "suggest", onPic
             <p className="py-8 text-center text-sm text-muted">No recipes match.</p>
           ) : (
             <div className="-mx-2 mt-2 space-y-1">
-              {library.map((r) => (
+              {/* recipes switched on for this meal first */}
+              {[...library].sort((a, b) => Number(b.meal_types.includes(meal.slot as MealType)) - Number(a.meal_types.includes(meal.slot as MealType))).map((r) => (
                 <Row key={r.id} title={r.title} photo={r.photo_path} minutes={r.total_min} favourite={r.is_favourite} macros={r.macros}
                   badge={inWeek.has(r.id) ? "Already this week" : r.id === meal.recipe?.id ? "Current" : undefined}
                   onClick={() => onPick(r.id, r.title)} />

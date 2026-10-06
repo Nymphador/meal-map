@@ -26,14 +26,14 @@ export default function Ingredients() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Ingredients" />
+      <PageHeader title="Prices" />
       <p className="-mt-3 mb-4 text-sm text-muted">
         Ingredients are added automatically from your recipes. Enter what you pay for each one and recipe costs add up from it.
       </p>
 
       <div className="relative mb-3">
         <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted" />
-        <input className="input pl-10" type="search" placeholder="Search ingredients" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="input pl-10" type="search" placeholder="Search ingredients" aria-label="Search prices" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map(([v, label]) => (
@@ -45,7 +45,12 @@ export default function Ingredients() {
       {!items && !error && <Spinner />}
       {items && items.length === 0 && (
         <div className="card p-6 text-center text-sm text-muted">
-          {status === "unpriced" ? "Everything has a price." : q ? "Nothing matches." : "No ingredients yet: they appear as you add recipes."}
+          {status === "unpriced" && !q ? "Everything has a price." : q ? "Nothing matches." : "No ingredients yet: they appear as you add recipes."}
+          {q && status !== "all" && (
+            <button className="mt-2 block w-full font-semibold text-brand" onClick={() => setParams({ status: "all" }, { replace: true })}>
+              Search all ingredients
+            </button>
+          )}
         </div>
       )}
       {items && items.length > 0 && (

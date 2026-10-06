@@ -109,6 +109,11 @@ export function draftFromJsonld(node: Node, url: string | null): RecipeDraft {
   if (diets.includes("vegan")) tags.push({ name: "Vegan", kind: "diet" });
   if (diets.includes("vegetarian") || diets.includes("vegan")) tags.push({ name: "Vegetarian", kind: "diet" });
 
+  // recipeCategory says "Breakfast", "Lunch", "Brunch", "Dinner", "Main course"...: a hint for which meal it suits.
+  const category = asList(node.recipeCategory).join(" ").toLowerCase();
+  const meal_types = ([["breakfast", /breakfast|brunch/], ["lunch", /lunch|brunch/], ["dinner", /dinner|main|supper/]] as const)
+    .filter(([, re]) => re.test(category)).map(([t]) => t);
+
   let raw = node.recipeIngredient ?? node.ingredients ?? [];
   if (typeof raw === "string") raw = [raw];
   return {
@@ -121,6 +126,7 @@ export function draftFromJsonld(node: Node, url: string | null): RecipeDraft {
     ingredients: ingredientLines((raw as unknown[]).map(String)),
     photo_path: firstImage(node.image),
     source_url: url, tags, nutrition: nutrition(node.nutrition),
+    meal_types: meal_types.length ? meal_types : undefined,
   };
 }
 

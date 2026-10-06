@@ -6,7 +6,7 @@ import { ApiError } from "../logic/errors";
 import { ingredientMap } from "../logic/ingredients";
 import { LIMIT_KEYS } from "../logic/nutrition";
 import { ingredientLines } from "../logic/parse";
-import { getRecipe, listRecipes, recipeOut, saveRecipe } from "../logic/recipes";
+import { cleanMealTypes, getRecipe, listRecipes, recipeOut, saveRecipe } from "../logic/recipes";
 import { parseText } from "../logic/textImport";
 import { importFromHtml } from "../logic/urlImport";
 import type { RecipeDraft } from "../types";
@@ -62,6 +62,11 @@ route("PATCH", "/api/recipes/:id", ({ params, body }) => {
   const r = getRecipe(int(params.id));
   if (body.is_favourite !== undefined && body.is_favourite !== null) r.is_favourite = !!body.is_favourite;
   if (body.rating !== undefined && body.rating !== null) r.rating = Math.min(5, Math.max(0, Number(body.rating))) || null;
+  if (body.meal_types !== undefined) {
+    const types = cleanMealTypes(body.meal_types);
+    if (!types) throw new ApiError(422, "A recipe needs at least one meal: breakfast, lunch or dinner");
+    r.meal_types = types;
+  }
   r.updated_at = nowIso();
   commit(TOPICS);
   return recipeOut(r);

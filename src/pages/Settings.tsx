@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, isNative } from "../api";
+import { PremiumPerks, useBuyRemoveAds } from "../components/Ads";
 import { LimitsEditor } from "../components/Nutrition";
+import { showPrivacyOptions, usePrivacyOptionsRequired } from "../monetise/ads";
+import { resetTestPurchase, restoreRemoveAds, useAdFree, useRemoveAdsPrice } from "../monetise/premium";
 import { useToast } from "../components/Toast";
 import { ErrorBox, PageHeader, Spinner } from "../components/ui";
+import { shareFile } from "../native";
 import { getTheme, setTheme, type Theme } from "../theme";
 import type { Settings, Tag } from "../types";
 
@@ -48,6 +52,106 @@ function AppearanceSection() {
   );
 }
 
+/** Premium (one-time purchase), restoring it on a new phone, and Google's ad privacy choices. */
+function AdsSection() {
+  const toast = useToast();
+  const adFree = useAdFree();
+  const price = useRemoveAdsPrice();
+  const buy = useBuyRemoveAds();
+  const privacy = usePrivacyOptionsRequired();
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore() {
+    const found = await restoreRemoveAds().catch(() => null);
+    if (found === null) toast("Couldn't reach Google Play. Check your connection and try again.", { error: true });
+    else toast(found ? "Premium restored" : "No Premium purchase found on this Google account");
+  }
+
+  return (
+    <section className="card p-4">
+      <h2 className="font-semibold">Premium</h2>
+      <p className="mt-0.5 text-xs text-muted">
+        {adFree
+          ? "You have Premium: no ads, and breakfast and lunch planning. Thank you for supporting the app!"
+          : `The app is free with ads. Premium is a one-time purchase of ${price}.`}
+      </p>
+      {!adFree && <div className="mt-3"><PremiumPerks /></div>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!adFree && (
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => run(buy)}>Get Premium · {price}</button>
+        )}
+        {!adFree && <button type="button" className="btn-secondary" disabled={busy} onClick={() => run(restore)}>Restore purchase</button>}
+        {privacy && !adFree && (
+          <button type="button" className="btn-secondary" onClick={() => showPrivacyOptions().catch(() => {})}>Ad privacy choices</button>
+        )}
+        {adFree && !isNative() && import.meta.env.DEV && (
+          <button type="button" className="btn-secondary" onClick={resetTestPurchase}>Undo Premium (browser test)</button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Everything in one file to keep somewhere safe, and putting a backup back. */
+function BackupSection() {
+  const toast = useToast();
+  const [busy, setBusy] = useState("");
+  const file = useRef<HTMLInputElement>(null);
+
+  async function save() {
+    setBusy("Preparing the backup…");
+    try {
+      const backup = await api<unknown>("/api/backup");
+      await shareFile(`meal-map-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup));
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function restore(f: File) {
+    if (!window.confirm(`Replace everything in the app with the backup in ${f.name}?`)) return;
+    setBusy("Restoring…");
+    try {
+      const r = await api<{ recipes: number }>("/api/backup/restore", { body: { text: await f.text() } });
+      toast(`Restored ${r.recipes} recipe${r.recipes === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBusy("");
+      if (file.current) file.current.value = "";
+    }
+  }
+
+  return (
+    <section className="card p-4">
+      <h2 className="font-semibold">Backup</h2>
+      <p className="mt-0.5 text-xs text-muted">
+        Your recipes, prices, plans and pantry live only on this {isNative() ? "phone" : "device"}
+        {isNative() ? " (Android also backs them up to your Google account)" : ""}. Save a backup file to move them to a new phone
+        or keep a copy somewhere safe.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={save} disabled={!!busy}>Save a backup</button>
+        <button type="button" className="btn-secondary" onClick={() => file.current?.click()} disabled={!!busy}>Restore a backup…</button>
+        <input ref={file} type="file" accept="application/json,.json" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) restore(f); }} />
+      </div>
+      {busy && <p className="mt-2 text-sm text-muted">{busy}</p>}
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const toast = useToast();
   const [s, setS] = useState<Settings | null>(null);
@@ -86,7 +190,7 @@ export default function SettingsPage() {
       <div className="xl:col-span-2"><PageHeader title="Settings" /></div>
       <div className="space-y-4">
 
-      <Section title="Meals" note="Dinners only for now; lunches can be added later.">
+      <Section title="Meals" note="Every day has a dinner. With Premium, open up a day on This week to plan its breakfast and lunch too.">
         <Field label="Servings I cook for">
           <input className="input" type="number" min={1} value={s.default_servings}
             onChange={(e) => set("default_servings", Math.max(1, Number(e.target.value) || 1))} />
@@ -146,19 +250,15 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      <button className="btn-primary w-full xl:sticky xl:bottom-6 xl:shadow-lg" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
+      <button className="btn-primary w-full xl:sticky xl:bottom-[calc(1.5rem+var(--ad-h,0px))] xl:shadow-lg" disabled={saving}>{saving ? "Saving…" : "Save settings"}</button>
       </div>
 
       <div className="mt-4 space-y-4 xl:mt-0">
+      <AdsSection />
+
       <AppearanceSection />
 
-      <section className="card p-4 text-sm">
-        <h2 className="font-semibold">Your data</h2>
-        <p className="mt-0.5 text-xs text-muted">
-          Everything (recipes, prices, plans) is stored on this {isNative() ? "phone" : "device"} only; nothing is uploaded.
-          {isNative() && " Android's automatic backup copies it to your Google account."}
-        </p>
-      </section>
+      <BackupSection />
       </div>
     </form>
   );

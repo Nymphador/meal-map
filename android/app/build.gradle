@@ -1,14 +1,25 @@
 apply plugin: 'com.android.application'
 
+// App id, version and the AdMob app id come from store-config.json (shared with the web code).
+def storeConfig = new groovy.json.JsonSlurper().parse(rootProject.file("../store-config.json"))
+def TEST_ADMOB_APP_ID = "ca-app-pub-3940256099942544~3347511713" // Google's public test app id
+
+// The upload key for Google Play. make-upload-key.bat creates both files; neither is ever committed.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
-    namespace = "com.example.mealplanner"
+    namespace = "com.nymphador.mealmap"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.example.mealplanner"
+        applicationId storeConfig.appId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode storeConfig.versionCode
+        versionName storeConfig.versionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +27,29 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+    buildFeatures {
+        resValues = true
+    }
+    signingConfigs {
         release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            // Test builds only ever show test ads.
+            resValue "string", "admob_app_id", TEST_ADMOB_APP_ID
+        }
+        release {
+            resValue "string", "admob_app_id", storeConfig.admobAppId ?: TEST_ADMOB_APP_ID
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

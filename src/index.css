@@ -134,6 +134,22 @@
   }
 }
 
+/* The phone's status bar (time, notifications) and gesture bar. The app draws edge to edge on Android;
+   Capacitor passes the bar sizes as --safe-area-inset-* because older Android web views report env() as 0. */
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+}
+
 @utility pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+}
+
+/* The banner ad sits at the very bottom, above the phone's own bar; --ad-h is its height (0 without ads,
+   set by monetise/ads.ts). The tab bar and sheets pad by it so the banner never covers them. */
+@utility pb-safe-ad {
+  padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)) + var(--ad-h, 0px));
+}
+/* Just above the phone tab bar (and the banner). */
+@utility bottom-above-nav {
+  bottom: calc(3.7rem + max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)) + var(--ad-h, 0px));
 }

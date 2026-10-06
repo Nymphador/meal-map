@@ -107,6 +107,36 @@ export function photoUrl(ref: string | null | undefined): string | null {
   return native ? Capacitor.convertFileSrc(`${photoBase}/${name}`) : (browserPhotos.get(name) ?? null);
 }
 
+/** Stores a photo under a given name (restoring a backup keeps the names the recipes refer to). */
+export async function savePhotoNamed(name: string, data: Blob): Promise<void> {
+  const safe = name.replace(/[^\w.-]/g, "");
+  if (native) {
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    await Filesystem.writeFile({ path: `${PHOTO_DIR}/${safe}`, data: bytesToBase64(bytes), directory: Directory.Data });
+  } else {
+    await idbRun("readwrite", (s) => s.put(data, `${PHOTO_DIR}/${safe}`));
+    browserPhotos.set(safe, URL.createObjectURL(data));
+  }
+}
+
+/** A spare copy of the data document (taken before a restore replaces everything). */
+export async function writeSpare(name: string, text: string): Promise<void> {
+  if (!native) {
+    await idbRun("readwrite", (s) => s.put(text, name));
+    return;
+  }
+  await Filesystem.writeFile({ path: name, data: text, directory: Directory.Data, encoding: Encoding.UTF8 });
+}
+
+export function blobToBase64(blob: Blob): Promise<string> {
+  return blob.arrayBuffer().then((b) => bytesToBase64(new Uint8Array(b)));
+}
+
+export function base64ToBlob(data: string, type: string): Blob {
+  const bin = atob(data);
+  return new Blob([Uint8Array.from(bin, (c) => c.charCodeAt(0))], { type });
+}
+
 export async function readPhoto(ref: string): Promise<Blob | null> {
   const name = ref.replace(/^photo:/, "");
   try {

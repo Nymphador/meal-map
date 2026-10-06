@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError } from "../api";
+import { api } from "../api";
 import { useLive } from "../live";
 import { PlusIcon, TrashIcon } from "../components/Icons";
 import { useToast } from "../components/Toast";
@@ -180,10 +180,9 @@ export default function PantryPage() {
 
   async function save(item: PantryItem, changes: Record<string, unknown>) {
     try {
-      await api(`/api/pantry/${item.id}`, { method: "PATCH", body: changes, queue: true });
+      await api(`/api/pantry/${item.id}`, { method: "PATCH", body: changes });
       load();
     } catch (e) {
-      if (e instanceof ApiError && e.queued) return toast("Offline: saved on this device, it'll sync later");
       fail(e);
     }
   }

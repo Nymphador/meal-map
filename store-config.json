@@ -1,0 +1,12 @@
+{
+  "_readme": "Store settings in one place. Fill in the three AdMob ids from apps.admob.com (Apps > Meal Map > App settings, then Ad units). Test builds (build-android.bat) always use Google's test ads; only build-release.bat uses these. Raise versionCode by 1 (and versionName as you like) before every upload to Google Play.",
+  "appId": "com.nymphador.mealmap",
+  "appName": "Meal Map",
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "admobPublisherId": "pub-6639853780627086",
+  "admobAppId": "ca-app-pub-6639853780627086~4430177430",
+  "bannerAdUnit": "ca-app-pub-6639853780627086/8081472821",
+  "rewardedAdUnit": "ca-app-pub-6639853780627086/7392127557",
+  "removeAdsProduct": "remove_ads"
+}

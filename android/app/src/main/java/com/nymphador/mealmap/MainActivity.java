@@ -1,4 +1,4 @@
-package com.example.mealplanner;
+package com.nymphador.mealmap;
 
 import com.getcapacitor.BridgeActivity;
 

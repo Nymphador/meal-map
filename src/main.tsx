@@ -6,12 +6,18 @@ import { initPhotos, readData, writeData } from "./data/storage";
 import { useAndroidBack } from "./native";
 import { seedIfNeeded } from "./server/settings";
 import { applyTheme } from "./theme";
+import { initAds } from "./monetise/ads";
+import { initPremium } from "./monetise/premium";
 import Layout from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
 import ImportRecipe from "./pages/ImportRecipe";
 import IngredientPage from "./pages/IngredientPage";
 import Ingredients from "./pages/Ingredients";
+import PantryPage from "./pages/Pantry";
+import PlanHistory from "./pages/PlanHistory";
+import ShoppingPage from "./pages/Shopping";
+import WeekPage from "./pages/Week";
 import RecipeDetail from "./pages/RecipeDetail";
 import RecipeEditor from "./pages/RecipeEditor";
 import RecipePrices from "./pages/RecipePrices";
@@ -23,7 +29,10 @@ function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/recipes" replace />} />
+        <Route index element={<WeekPage />} />
+        <Route path="plans/history" element={<PlanHistory />} />
+        <Route path="shopping" element={<ShoppingPage />} />
+        <Route path="pantry" element={<PantryPage />} />
         <Route path="recipes" element={<Recipes />} />
         <Route path="recipes/new" element={<RecipeEditor />} />
         <Route path="recipes/import" element={<ImportRecipe />} />
@@ -33,7 +42,7 @@ function App() {
         <Route path="ingredients" element={<Ingredients />} />
         <Route path="ingredients/:id" element={<IngredientPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/recipes" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );
@@ -55,9 +64,12 @@ async function boot() {
       </BrowserRouter>
     </React.StrictMode>,
   );
+  // After the first draw, so the app never waits on Google Play or AdMob (or their consent form) to open.
+  initPremium().catch((e) => console.warn(e));
+  initAds().catch((e) => console.warn(e));
 }
 
 boot().catch((e) => {
   console.error(e);
-  document.getElementById("root")!.textContent = `Meal Planner couldn't load its data: ${(e as Error).message}`;
+  document.getElementById("root")!.textContent = `Meal Map couldn't load its data: ${(e as Error).message}`;
 });

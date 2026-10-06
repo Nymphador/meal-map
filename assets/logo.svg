@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Placeholder Meal Map logo (a map pin holding a fork). assets/logo.png replaces it when present. -->
+  <rect width="1024" height="1024" fill="#168054"/>
+  <path d="M512 790 C440 690 322 570 322 440 A190 190 0 1 1 702 440 C702 570 584 690 512 790 Z" fill="#ffffff"/>
+  <circle cx="512" cy="440" r="122" fill="#168054"/>
+  <g fill="#ffffff">
+    <rect x="458" y="350" width="22" height="78" rx="11"/>
+    <rect x="501" y="350" width="22" height="78" rx="11"/>
+    <rect x="544" y="350" width="22" height="78" rx="11"/>
+    <path d="M458 410 H566 V430 A40 40 0 0 1 526 470 H498 A40 40 0 0 1 458 430 Z"/>
+    <rect x="499" y="460" width="26" height="92" rx="13"/>
+  </g>
+</svg>

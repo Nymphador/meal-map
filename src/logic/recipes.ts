@@ -1,7 +1,7 @@
 // Saving recipes and turning them into the shapes the screens use. Every way of adding a recipe ends here.
 
 import { db, nextId, nowIso } from "../data/db";
-import type { IngredientRow, RecipeRow, TagRow } from "../data/schema";
+import type { IngredientRow, MealType, RecipeRow, TagRow } from "../data/schema";
 import type { RecipeDraft, TagIn } from "../types";
 import { ApiError } from "./errors";
 import { autoResolveLines, ingredientMap, resolveIngredientId } from "./ingredients";
@@ -45,6 +45,20 @@ function clampInt(v: unknown, lo: number, hi: number): number | null {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null;
 }
 
+export const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner"];
+
+/** The meals a recipe suits; recipes from before breakfast and lunch existed are dinners. */
+export function mealTypes(r: RecipeRow): MealType[] {
+  return r.meal_types?.length ? r.meal_types : ["dinner"];
+}
+
+/** Keeps only real meal names, in breakfast-lunch-dinner order. Null when nothing valid was given. */
+export function cleanMealTypes(value: unknown): MealType[] | null {
+  if (!Array.isArray(value)) return null;
+  const picked = MEAL_TYPES.filter((t) => value.includes(t));
+  return picked.length ? picked : null;
+}
+
 /** Creates or replaces a recipe from a draft, then links every line to an ingredient. Doesn't commit. */
 export function saveRecipe(draft: RecipeDraft, existing?: RecipeRow): RecipeRow {
   const title = (draft.title ?? "").trim();
@@ -67,6 +81,8 @@ export function saveRecipe(draft: RecipeDraft, existing?: RecipeRow): RecipeRow 
   r.rating = clampInt(draft.rating, 1, 5);
   r.is_favourite = !!draft.is_favourite;
   r.nutrition = draft.nutrition && Object.keys(draft.nutrition).length ? draft.nutrition : null;
+  // The editor doesn't send meal types (they're switched on the recipe page), so an edit keeps them.
+  r.meal_types = cleanMealTypes(draft.meal_types) ?? (existing ? mealTypes(existing) : ["dinner"]);
   r.updated_at = now;
   r.lines = (draft.ingredients ?? []).filter((l) => l.name?.trim()).map((l) => {
     const name = l.name.trim();
@@ -99,7 +115,7 @@ export function summary(r: RecipeRow, ings: Map<number, IngredientRow>, nutritio
     id: r.id, title: r.title, photo_path: r.photo_path, prep_min: r.prep_min, cook_min: r.cook_min,
     total_min: totalMinutes(r), servings: r.servings, rating: r.rating, is_favourite: r.is_favourite,
     source: r.source, times_cooked: r.times_cooked, last_cooked: r.last_cooked, tags: recipeTags(r),
-    updated_at: r.updated_at, macros: macrosOut(nutrition ?? recipeNutrition(r, ings)),
+    updated_at: r.updated_at, macros: macrosOut(nutrition ?? recipeNutrition(r, ings)), meal_types: mealTypes(r),
   };
 }
 

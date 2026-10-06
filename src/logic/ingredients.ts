@@ -60,6 +60,9 @@ export function newIngredient(name: string, category: string, defaultUnit: strin
 
 /** Finds or makes an ingredient by name (a deleted one comes back). New ones get the built-in
  * nutrition and rough conversions for their category. Doesn't commit. */
+// Things a recipe uses that nobody shops for.
+const NEVER_BUY = new Set(["water", "ice", "boiling water", "hot water", "cold water", "warm water", "tap water", "ice cube"]);
+
 export function createIngredient(name: string, category?: string, defaultUnit = "g"): IngredientRow {
   const clean = name.trim().toLowerCase().replace(/\s+/g, " ");
   if (!clean) throw new Error("An ingredient needs a name");
@@ -75,6 +78,7 @@ export function createIngredient(name: string, category?: string, defaultUnit = 
   ing.density_g_per_ml = DEFAULT_DENSITY[cat] ?? 1;
   ing.grams_per_each = guessedEach;
   fillBuiltin(ing, guessedEach); // may replace the guessed item weight with a known one
+  ing.never_buy = NEVER_BUY.has(normaliseName(clean));
   const key = normaliseName(clean);
   if (key !== clean) addAlias(ing, key);
   db().ingredients.push(ing);
