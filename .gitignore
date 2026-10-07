@@ -8,6 +8,8 @@ android/keystore.properties
 *.jks
 *.apk
 *.aab
+# Starter recipe photos: closed testing builds only, never published (store-config.json starterPhotos)
+starter-photos/
 # Editors / OS
 .vscode/
 .idea/

@@ -17,6 +17,89 @@ type Form = Pick<IngredientDetail, (typeof FIELDS)[number]>;
 
 const toForm = (x: IngredientDetail): Form => Object.fromEntries(FIELDS.map((k) => [k, x[k]])) as Form;
 
+type SpellingSuggestion = { text: string; recipes: number; linked_to: { id: number; name: string } | null };
+type SpellingResult = { ingredient: IngredientDetail; linked: number; merged: string | null; undo: unknown };
+
+/** Other wordings recipes use for this ingredient ("fine breadcrumbs", "dried breadcrumbs"). Adding one links every
+ * recipe line using it, now and in future recipes; if the app had made it an ingredient of its own, that one is
+ * merged in (with Undo). Suggestions are wordings in your recipes that contain this ingredient's name. */
+function OtherSpellings({ d, onChange, onRemove }: {
+  d: IngredientDetail; onChange: (x: IngredientDetail) => void; onRemove: (alias: string) => void;
+}) {
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<SpellingSuggestion[]>([]);
+  const refresh = () => api<SpellingSuggestion[]>(`/api/ingredients/${d.id}/spellings/suggest`).then(setSuggestions).catch(() => setSuggestions([]));
+  useEffect(() => { refresh(); }, [d.id, d.aliases.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add(spelling: string) {
+    if (!spelling.trim()) return;
+    setBusy(true);
+    try {
+      const r = await api<SpellingResult>(`/api/ingredients/${d.id}/spellings`, { body: { text: spelling } });
+      onChange(r.ingredient);
+      setText("");
+      const lines = `${r.linked} recipe line${r.linked === 1 ? "" : "s"}`;
+      if (r.merged) {
+        toast(`Merged "${r.merged}" into ${d.name}${r.linked ? ` (${lines})` : ""}`, { action: { label: "Undo", run: () => {
+          api("/api/ingredients/spellings/undo", { body: r.undo }).then(() => api<IngredientDetail>(`/api/ingredients/${d.id}`)).then(onChange)
+            .catch((e) => toast((e as Error).message, { error: true }));
+        } } });
+      } else {
+        toast(r.linked ? `Linked ${lines}` : "Added: recipes with this wording will link here");
+      }
+    } catch (e) {
+      toast((e as Error).message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card space-y-3 p-4">
+      <div>
+        <h2 className="font-semibold">Other spellings</h2>
+        <p className="text-xs text-muted">Recipe wording with any of these links here, in recipes you have and ones you add later.</p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {d.aliases.map((a) => (
+          <span key={a} className="chip py-1">
+            {a}
+            <button type="button" onClick={() => onRemove(a)} aria-label={`Remove ${a}`} className="text-muted hover:text-danger">
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ))}
+        {d.aliases.length === 0 && <span className="text-sm text-muted">None yet.</span>}
+      </div>
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); add(text); }}>
+        <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`e.g. fine ${d.name}`} />
+        <button className="btn-secondary shrink-0" disabled={busy || !text.trim()}>Add</button>
+      </form>
+      {suggestions.length > 0 && (
+        <div>
+          <p className="label">In your recipes</p>
+          <ul className="divide-y divide-line rounded-xl border border-line">
+            {suggestions.map((s) => (
+              <li key={s.text} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{s.text}</p>
+                  <p className="text-xs text-muted">
+                    {s.recipes} recipe{s.recipes === 1 ? "" : "s"}
+                    {s.linked_to ? ` · now its own ingredient, "${s.linked_to.name}" (adding merges it)` : " · not linked to anything"}
+                  </p>
+                </div>
+                <button type="button" className="btn-secondary shrink-0 px-3 py-1.5 text-sm" disabled={busy} onClick={() => add(s.text)}>Add</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function IngredientPage() {
   const { id } = useParams();
   const toast = useToast();
@@ -162,21 +245,7 @@ export default function IngredientPage() {
         </section>
       )}
 
-      <section className="card p-4">
-        <h2 className="font-semibold">Other spellings</h2>
-        <p className="mb-2 text-xs text-muted">Recipe text with any of these links here automatically.</p>
-        <div className="flex flex-wrap gap-1.5">
-          {d.aliases.map((a) => (
-            <span key={a} className="chip py-1">
-              {a}
-              <button onClick={() => removeAlias(a)} aria-label={`Remove ${a}`} className="text-muted hover:text-danger">
-                <CloseIcon className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          ))}
-          {d.aliases.length === 0 && <span className="text-sm text-muted">None yet.</span>}
-        </div>
-      </section>
+      <OtherSpellings d={d} onChange={apply} onRemove={removeAlias} />
     </div>
   );
 }

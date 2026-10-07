@@ -4,7 +4,7 @@ Meal Map (app id `com.nymphador.mealmap`, fixed forever once uploaded) is the Pl
 FastAPI server and Woolworths/Coles price tracking). This one runs entirely on the phone: no server, no
 accounts, no store prices. Users price ingredients themselves. Free with ads (a banner, and a rewarded video
 before generating a meal plan). Premium, a one-time $9.99 purchase (Play product id `remove_ads`, kept from when it only
-removed ads), removes them and unlocks breakfast and lunch. It ships with no recipes.
+removed ads), removes them and unlocks breakfast and lunch. Since 1.1.1 it adds 20 starter dinners once (see Starter recipes).
 
 **Status:** phase 1 committed. Phases 2 (planner, pantry, shopping, backup), 3 (ads, remove-ads purchase, consent)
 and 4 (Meal Map name/app id, icon pipeline, signed release build, privacy policy + app-ads.txt site, store listing
@@ -85,3 +85,14 @@ guide) built, awaiting the user's check. What's left is the user's: their logo, 
 ## Conventions
 - Colours are CSS variables with dark mode (`src/index.css`, `theme.ts`); use semantic Tailwind colours.
 - Every logic change gets a vitest test; port the matching Python test when porting a feature.
+
+## Starter recipes (1.1.1)
+- `src/data/starterRecipes.ts`: 20 high-protein dinners (<750 kcal, >=35 g protein) adapted from BBC Good Food. Ingredient
+  lines use Australian names and go through `ingredientLines` like an import; methods are written in our own words (never
+  paste the original text); nutrition is the original per-serve panel; each keeps its `source_url`. No BBC descriptions.
+- `src/logic/starter.ts` `addStarterRecipes` runs at boot after `seedIfNeeded`: once per install (`settings._starter_v1`),
+  skips recipes whose source_url is already in the library, never re-adds deleted ones.
+- Photos are BBC's, for CLOSED TESTING ONLY. They live in `starter-photos/` (gitignored: never commit or publish them) and
+  the `starterPhotos` Vite plugin copies them into the build at /starter/ only while store-config.json
+  `"starterPhotos": true`. **Set it to false before any production or open-testing release**: that build ships no photo
+  files, and `addStarterRecipes` clears the /starter/ photo paths that testers' phones already stored.

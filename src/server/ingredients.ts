@@ -4,6 +4,7 @@ import { hasPrice, PRICE_UNITS, priceText, unitPrice } from "../logic/costing";
 import { ApiError } from "../logic/errors";
 import { createIngredient, getIngredient, linkAlias, recipeCounts, suggestExisting } from "../logic/ingredients";
 import { CATEGORIES, guessCategory, guessDefaultUnit, normaliseName } from "../logic/names";
+import { addSpelling, spellingSuggestions, undoMerge, type MergeUndo } from "../logic/spellings";
 import { int, route } from "./router";
 
 const TOPICS = ["ingredients", "recipes", "plans", "shopping"];
@@ -154,6 +155,24 @@ route("POST", "/api/ingredients/:id/link", ({ params, body }) => {
   commit(TOPICS);
   return detailOut(ing, linked);
 });
+
+/** Another spelling ("fine breadcrumbs"): recipe lines using it link here, now and later. If it was an
+ * ingredient of its own, that one is merged in, and `undo` (for /spellings/undo) comes back. */
+route("POST", "/api/ingredients/:id/spellings", ({ params, body }) => {
+  const ing = get(params.id);
+  const { linked, merged, undo } = addSpelling(ing, String(body.text ?? ""));
+  commit([...TOPICS, "pantry"]);
+  return { ingredient: detailOut(ing, linked), linked, merged, undo };
+});
+
+route("POST", "/api/ingredients/spellings/undo", ({ body }) => {
+  undoMerge(body as unknown as MergeUndo);
+  commit([...TOPICS, "pantry"]);
+  return { ok: true };
+});
+
+/** Recipe wordings that mention this ingredient but don't link here yet. */
+route("GET", "/api/ingredients/:id/spellings/suggest", ({ params }) => spellingSuggestions(get(params.id)));
 
 route("DELETE", "/api/ingredients/:id/aliases/:alias", ({ params }) => {
   const ing = get(params.id);

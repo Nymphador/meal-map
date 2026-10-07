@@ -1,10 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { openDb } from "./data/db";
+import { commit, openDb } from "./data/db";
 import { initPhotos, readData, writeData } from "./data/storage";
 import { useAndroidBack } from "./native";
 import { seedIfNeeded } from "./server/settings";
+import { addStarterRecipes } from "./logic/starter";
 import { applyTheme } from "./theme";
 import { initAds } from "./monetise/ads";
 import { initPremium } from "./monetise/premium";
@@ -55,6 +56,7 @@ async function boot() {
   openDb(await readData(), writeData);
   await initPhotos();
   seedIfNeeded();
+  if (addStarterRecipes()) commit(["recipes", "ingredients"]);
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <BrowserRouter>
